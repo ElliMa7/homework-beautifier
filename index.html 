@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>作业美化工具（单文件版）</title>
+<style>
+  body { font-family: "微软雅黑", sans-serif; background: #f2f2f2; padding: 20px; }
+  h1 { text-align: center; margin-bottom: 1rem; }
+  #controls { margin-bottom: 1rem; text-align: center; }
+  button, select, input[type="text"] {
+    margin: 0 5px 10px 5px;
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+  #images-container { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+  .image-card {
+    position: relative;
+    background: white;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 0 6px rgba(0,0,0,0.1);
+  }
+  canvas {
+    display: block;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fff url('https://i.imgur.com/5uGQQ5F.png') repeat; /* 纸纹背景纹理 */
+  }
+  .caption-input {
+    width: 180px;
+    margin-top: 6px;
+    font-family: 'Segoe Script', cursive, sans-serif;
+    font-size: 16px;
+    border: none;
+    border-bottom: 1px dashed #888;
+    outline: none;
+    background: transparent;
+    color: #444;
+  }
+  #output-msg {
+    text-align: center;
+    color: green;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+
+<h1>作业美化工具（单文件版）</h1>
+
+<div id="controls">
+  <input type="file" id="file-input" accept="image/*" multiple />
+  <select id="template-select">
+    <option value="experiment">实验报告风格</option>
+    <option value="handcraft">手工作品卡片</option>
+    <option value="notes">图文混排阅读笔记</option>
+  </select>
+  <input type="text" id="caption-input" placeholder="请输入说明文字（可留空）" />
+  <button id="btn-enhance">一键美化</button>
+  <button id="btn-export-pdf">导出 PDF</button>
+</div>
+
+<div id="images-container"></div>
+
+<div id="output-msg"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+(() => {
+  const { jsPDF } = window.jspdf;
+
+  const fileInput = document.getElementById('file-input');
+  const templateSelect = document.getElementById('template-select');
+  const captionInput = document.getElementById('caption-input');
+  const btnEnhance = document.getElementById('btn-enhance');
+  const btnExportPDF = document.getElementById('btn-export-pdf');
+  const imagesContainer = document.getElementById('images-container');
+  const outputMsg = document.getElementById('output-msg');
+
+  let canvasObjs = [];
+
+  // 纸纹背景图片，用作canvas背景纹理
+  const paperTextureURL = 'https://i.imgur.com/5uGQQ5F.png';
+
+  // 手写字体样式（用web-safe字体代替）
+  const handwrittenFont = "'Segoe Script', cursive, sans-serif";
+
+  // 读取图片，画到canvas上，并返回canvas和ctx
+  function createCanvasFromImage(img) {
+    const maxWidth = 400;
+    const scale = maxWidth / img.width;
+    const width = maxWidth;
+    const height = img.height * scale;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+
+    // 先填白底
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, height);
+
+    // 绘制纸纹背景
+    const texture = new Image();
+    texture.src = paperTextureURL;
+    texture.onload = () => {
+      const pattern = ctx.createPattern(texture, 'repeat');
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, width, height);
+
+      // 绘制照片
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // 一开始先美化一次
+      applyFilters(ctx, width, height);
+
+      // 加边框
+      drawBorder(ctx, width, height);
+
+      // 加说明文字（默认空）
+      addCaption(ctx, width, height, '');
+    };
+
+    return { canvas, ctx, img };
+  }
+
+  // 滤镜：提高清晰度（锐化）+ 增加对比度
+  function applyFilters(ctx, width, height) {
+    let imageData = ctx.getImageData(0, 0, width, height);
+    let data = imageData.data;
+
+    // 简单锐化卷积核
+    const kernel = [
+      0, -1,  0,
+     -1,  5, -1,
+      0, -1,  0
+    ];
+
+    // 卷积操作
+    function convolute(data, width, height, kernel) {
+      const side = Math.sqrt(kernel.length);
+      const halfSide = Math.floor(side / 2);
+      const output = new Uint8ClampedArray(data.length);
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          for (let c = 0; c < 3; c++) { // R,G,B channels
+            let sum = 0;
+            for (let ky = 0; ky < side; ky++) {
+              for (let kx = 0; kx < side; kx++) {
+                let px = x + kx - halfSide;
+                let py = y + ky - halfSide;
+                if (px >= 0 && px < width && py >= 0 && py < height) {
+                  const idx = (py * width + px) * 4 + c;
+                  const kval = kernel[ky * side + kx];
+                  sum += data[idx] * kval;
+                }
+              }
+            }
+            const i = (y * width + x) * 4 + c;
+            output[i] = Math.min(255, Math.max(0, sum));
+          }
+          // alpha channel
+          output[(y * width + x) * 4 + 3] = data[(y * width + x) * 4 + 3];
+        }
+      }
+      return output;
+    }
+
+    const sharpened = convolute(data, width, height, kernel);
+    for (let i = 0; i < sharpened.length; i++) {
+      data[i] = sharpened[i];
+    }
+
+    // 增加对比度，简单线性调整
+    const contrast = 1.2; // 1.0 = no change, >1 increase contrast
+    const intercept = 128 * (1 - contrast);
+    for(let i = 0; i < data.length; i +=4) {
+      data[i] = Math.min(255, Math.max(0, data[i]*contrast + intercept));     // R
+      data[i+1] = Math.min(255, Math.max(0, data[i+1]*contrast + intercept)); // G
+      data[i+2] = Math.min(255, Math.max(0, data[i+2]*contrast + intercept)); // B
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  // 画简单边框
+  function drawBorder(ctx, width, height) {
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 8;
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.strokeRect(4, 4, width-8, height-8);
+    ctx.shadowBlur = 0;
+  }
+
+  // 添加手写风格说明文字
+  function addCaption(ctx, width, height, text) {
+    if (!text) return;
+    ctx.font = '20px ' + handwrittenFont;
+    ctx.fillStyle = '#3a3a3a';
+    ctx.textBaseline = 'bottom';
+    ctx.shadowColor = 'rgba(255,255,255,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(text, 20, height - 20);
+    ctx.shadowBlur = 0;
+  }
+
+  // 根据模板渲染 - 目前只调整边框颜色和文字位置模拟不同模板
+  function renderTemplate(obj, template, caption) {
+    const {canvas, ctx, img} = obj;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // 清空画布（白底+纸纹）
+    ctx.clearRect(0, 0, w, h);
+
+    // 绘制纸纹背景
+    const texture = new Image();
+    texture.src = paperTextureURL;
+    texture.onload = () => {
+      const pattern = ctx.createPattern(texture, 'repeat');
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, w, h);
+
+      // 绘制照片
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // 重新应用滤镜和边框
+      applyFilters(ctx, w, h);
+
+      // 根据模板调整边框颜色和说明文字位置
+      ctx.lineWidth = 6;
+      ctx.shadowColor = 'rgba(0,0,0,0.12)';
+      ctx.shadowBlur = 5;
+
+      switch(template) {
+        case 'experiment': // 实验报告 - 蓝色边框
+          ctx.strokeStyle = '#0066cc';
+          ctx.strokeRect(3, 3, w-6, h-6);
+          // 文字底部中间
+          if(caption) {
+            ctx.font = '18px ' + handwrittenFont;
+            ctx.fillStyle = '#004080';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'rgba(255,255,255,0.9)';
+            ctx.shadowBlur = 6;
+            ctx.fillText(caption, w/2, h-18);
+          }
+          break;
+        case 'handcraft': // 手工作品卡片 - 橙色边框，左上角
+          ctx.strokeStyle = '#ff6600';
+          ctx.strokeRect(3, 3, w-6, h-6);
+          if(caption) {
+            ctx.font = '20px ' + handwrittenFont;
+            ctx.fillStyle = '#b34700';
+            ctx.textAlign = 'left';
+            ctx.shadowColor = 'rgba(255,255,255,0.8)';
+            ctx.shadowBlur = 4;
+            ctx.fillText(caption, 20, 40);
+          }
+          break;
+        case 'notes': // 阅读笔记 - 绿色边框，右下角
+          ctx.strokeStyle = '#339933';
+          ctx.strokeRect(3, 3, w-6, h-6);
+          if(caption) {
+            ctx.font = '18px ' + handwrittenFont;
+            ctx.fillStyle = '#267326';
+            ctx.textAlign = 'right';
+            ctx.shadowColor = 'rgba(255,255,255,0.7)';
+            ctx.shadowBlur = 4;
+            ctx.fillText(caption, w-20, h-20);
+          }
+          break;
+        default:
+          ctx.strokeStyle = '#666';
+          ctx.strokeRect(3, 3, w-6, h-6);
+      }
+      ctx.shadowBlur = 0;
+    };
+  }
+
+  // 上传图片，初始化canvasObjs
+  fileInput.addEventListener('change', e => {
+    imagesContainer.innerHTML = '';
+    canvasObjs = [];
+    const files = e.target.files;
+    if (!files.length) return;
+
+    Array.from(files).forEach(file => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = url;
+      img.onload = () => {
+        const obj = createCanvasFromImage(img);
+        imagesContainer.appendChild(obj.canvas);
+        canvasObjs.push(obj);
+
+        // 载入后立即渲染默认模板和说明
+        renderTemplate(obj, templateSelect.value, captionInput.value);
+      };
+    });
+  });
+
+  // 一键美化按钮重新渲染所有图片
+  btnEnhance.addEventListener('click', () => {
+    if (canvasObjs.length === 0) {
+      alert('请先上传图片');
+      return;
+    }
+    canvasObjs.forEach(obj => {
+      renderTemplate(obj, templateSelect.value, captionInput.value);
+    });
+    outputMsg.textContent = '图片已美化完成！';
+    setTimeout(() => { outputMsg.textContent = ''; }, 3000);
+  });
+
+  // 说明文字输入时同步更新
+  captionInput.addEventListener('input', () => {
+    canvasObjs.forEach(obj => {
+      renderTemplate(obj, templateSelect.value, captionInput.value);
+    });
+  });
+
+  // 模板切换时同步更新
+  templateSelect.addEventListener('change', () => {
+    canvasObjs.forEach(obj => {
+      renderTemplate(obj, templateSelect.value, captionInput.value);
+    });
+  });
+
+  // 导出PDF
+  btnExportPDF.addEventListener('click', () => {
+    if (canvasObjs.length === 0) {
+      alert('请先上传图片');
+      return;
+    }
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const margin = 20;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    let x = margin, y = margin;
+    const maxImgWidth = pageWidth - margin * 2;
+    const maxImgHeight = 200; // 每张图最大高度
+
+    function addImageToPDF(canvas) {
+      const imgData = canvas.toDataURL('image/png');
+      const imgProps = pdf.getImageProperties(imgData);
+      let imgWidth = imgProps.width;
+      let imgHeight = imgProps.height;
+      const scale = Math.min(maxImgWidth / imgWidth, maxImgHeight / imgHeight);
+      imgWidth *= scale;
+      imgHeight *= scale;
+
+      if (y + imgHeight > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+      }
+
+      pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight);
+      y += imgHeight + 15;
+    }
+
+    canvasObjs.forEach(obj => addImageToPDF(obj.canvas));
+
+    pdf.save('homework_beautified.pdf');
+  });
+})();
+</script>
+
+</body>
+</html>
