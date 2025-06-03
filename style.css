@@ -1,0 +1,16 @@
+
+body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    background: #f2f2f2;
+}
+h1 {
+    color: #333;
+}
+#output img {
+    margin: 10px;
+    border: 6px solid #ccc;
+    padding: 5px;
+    background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/P+3HdQAAAABJRU5ErkJggg==');
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+}
