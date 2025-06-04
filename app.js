@@ -52,6 +52,7 @@ function updateBackground() {
     });
 }
 
+// 修改后的 exportAsPDF 函数
 function exportAsPDF() {
     const element = document.getElementById('output');
     
@@ -60,13 +61,14 @@ function exportAsPDF() {
     let loadedImages = 0;
 
     images.forEach(img => {
+        console.log('图片加载状态:', img.complete);
         if (img.complete) {
             loadedImages++;
         } else {
             img.onload = () => {
                 loadedImages++;
                 if (loadedImages === images.length) {
-                    // 所有图片加载完毕后再导出 PDF
+                    console.log('所有图片加载完毕，开始导出 PDF');
                     html2pdf().from(element).save('homework.pdf');
                 }
             };
@@ -75,6 +77,7 @@ function exportAsPDF() {
 
     // 如果没有图片，直接导出
     if (images.length === 0) {
+        console.log('没有图片，直接导出 PDF');
         html2pdf().from(element).save('homework.pdf');
     }
 }
