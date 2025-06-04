@@ -2,6 +2,14 @@ document.getElementById('imageInput').addEventListener('change', handleImages);
 document.getElementById('backgroundSelect').addEventListener('change', updateBackground);
 document.getElementById('exportPdf').addEventListener('click', exportAsPDF);
 
+const backgroundSelect = document.getElementById('backgroundSelect');
+const preview = document.getElementById('preview');
+
+backgroundSelect.addEventListener('change', () => {
+    const bg = backgroundSelect.value;
+    preview.style.backgroundImage = bg ? `url(${bg})` : 'none';
+});
+
 let selectedBackground = '';
 
 function handleImages(event) {
