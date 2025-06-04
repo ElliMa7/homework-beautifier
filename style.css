@@ -38,3 +38,10 @@ h1 {
     background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/P+3HdQAAAABJRU5ErkJggg==');
     box-shadow: 0 4px 6px rgba(0,0,0,0.2);
 }
+
+#preview {
+    background-size: cover;
+    background-position: center;
+    padding: 20px;
+    min-height: 400px;
+}
