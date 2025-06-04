@@ -38,6 +38,14 @@ function handleImages(event) {
 function updateBackground() {
     const select = document.getElementById('backgroundSelect');
     selectedBackground = select.value;
+
+    // 更新预览背景
+    if (selectedBackground) {
+        preview.style.backgroundImage = `url(${selectedBackground})`;
+    } else {
+        preview.style.backgroundImage = 'none';
+    }
+
     // 更新所有容器背景
     document.querySelectorAll('.image-container').forEach(container => {
         container.style.backgroundImage = selectedBackground ? `url(${selectedBackground})` : 'none';
@@ -46,5 +54,27 @@ function updateBackground() {
 
 function exportAsPDF() {
     const element = document.getElementById('output');
-    html2pdf().from(element).save('homework.pdf');
+    
+    // 确保所有图片加载完成后再执行导出
+    const images = element.querySelectorAll('img');
+    let loadedImages = 0;
+
+    images.forEach(img => {
+        if (img.complete) {
+            loadedImages++;
+        } else {
+            img.onload = () => {
+                loadedImages++;
+                if (loadedImages === images.length) {
+                    // 所有图片加载完毕后再导出 PDF
+                    html2pdf().from(element).save('homework.pdf');
+                }
+            };
+        }
+    });
+
+    // 如果没有图片，直接导出
+    if (images.length === 0) {
+        html2pdf().from(element).save('homework.pdf');
+    }
 }
